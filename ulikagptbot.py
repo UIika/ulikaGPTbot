@@ -1,28 +1,27 @@
 import openai
 import asyncio
+from openai.error import InvalidRequestError
 from aiogram import Bot, Dispatcher, F
 from aiogram import types
 from aiogram.filters.command import Command
 from config import TG_TOKEN, GPT_API_KEY, PASSWORD
 
 openai.api_key = GPT_API_KEY
+model_id = 'gpt-3.5-turbo'
 
-model_id = 'gpt-3.5-turbo-16k'
+vip_users = [
+    'ulikalitka',
+]
 
 history=[
-     {
-        'role': 'system',
-        'content': '''You are a helpful assistant who answers in ukrainian,
-                     and always refers to the user by his specified nickname'''
-     },
-    ]
+        {
+            'role': 'system',
+            'content': 'You are a helpful assistant who speaks ukrainian mostly'
+        },
+        ]
 
-def gpt_conversation(username, message) -> str:
-    if len(history) == 1:
-        history.append({'role': 'user',
-                        'content': f'Привіт. мене звати {username}. {message}'})
-    else:
-        history.append({'role': 'user', 'content': f'{message}'})
+def gpt_conversation(message: str) -> str:
+    history.append({'role': 'user', 'content': f'{message}'})
     response = openai.ChatCompletion.create(
         model=model_id,
         messages=history
@@ -40,23 +39,36 @@ is_password_entered = False
 @dp.message(Command('start'))
 async def cmd_start(message: types.Message):
     global is_password_entered
-    is_password_entered = False
-    await message.answer('Введіть пароль, будь ласка')
+    if message.from_user.username in vip_users:
+        is_password_entered = True
+        await message.answer('Приємного спілкування!😊')
+    else:
+        is_password_entered = False
+        await message.answer('Введіть пароль, будь ласка')
     
     
 @dp.message(F.text == PASSWORD)
-async def cmd_start(message: types.Message):
-    global is_password_entered, history
+async def authenticate(message: types.Message):
+    global is_password_entered
     if is_password_entered == False:
+        global history
         history = history[:1]
         is_password_entered = True
-        await message.answer('Ласкаво просимо, приємного спілкування!😊')
+        await message.answer('Приємного спілкування!😊')
         
 @dp.message()
 async def chatting(message: types.Message):
     if is_password_entered == True:
-        await message.answer(gpt_conversation(message.from_user.username, message))
-    else:
+        tmp_message = await message.answer('Зачекайте поки бот згенерує відповіть')
+        try:
+            await bot.edit_message_text(
+                gpt_conversation(message),
+                message.chat.id, tmp_message.message_id)
+        except(InvalidRequestError):
+            await bot.edit_message_text('''Ви досягли максимуму можливих повідомлень, розпочніть нову бесіду за допомогою команди /start''',
+                                 message.chat.id, tmp_message.message_id)
+            cmd_start(message)
+    else:   
         await message.answer('Неправильний пароль!😡')
         
 async def main():
